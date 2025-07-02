@@ -1,0 +1,125 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Cursos Fysa</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.6.2/css/bootstrap.min.css">
+<style>
+body{font-family:Arial, sans-serif;padding:15px;background:#f7f7f7;}
+h1{font-size:1.6rem;margin-bottom:15px;}
+#scrollArea{height:70vh;border:1px solid #ccc;overflow:auto;}
+table{width:100%;}
+td,th{padding:4px;font-size:0.85rem;}
+td.details{cursor:pointer;color:#007bff;font-weight:bold;}
+.accordion{background:#fafafa;font-style:italic;}
+</style>
+</head>
+<body>
+<h1>📊 Cursos Fysa</h1>
+
+<div class="mb-2">
+  <input type="file" id="fileCsv" accept=".csv">
+</div>
+
+<div class="mb-2">
+  Desde: <input type="datetime-local" id="fromDate">
+  Hasta: <input type="datetime-local" id="toDate">
+  Dominio contiene: <input type="text" id="domainFilter" size="10">
+  Zona horaria (h): <input type="number" id="tzOff" value="0" style="width:60px">
+  <button class="btn btn-sm btn-primary" id="btnFilter">Filtrar</button>
+</div>
+
+<div class="mb-2">
+  Modo descripción:
+  <select id="modeDesc">
+    <option value="basic">Básico</option>
+    <option value="context">Contextual</option>
+  </select>
+  Registros antes/después: 
+  <select id="contextSize"><option>0</option><option>50</option><option selected>100</option><option>300</option><option>500</option></select>
+</div>
+
+<div id="scrollArea"><table class="table table-striped"><tbody id="contentArea"></tbody></table></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/clusterize.js/0.18.0/clusterize.min.js"></script>
+<script>
+let allRows=[];
+let cluster=null;
+
+function favicon(domain){
+  return '<img src="https://www.google.com/s2/favicons?domain='+domain+'&sz=16" class="mr-1">';
+}
+
+// basic description
+function basicDesc(domain){
+  const m=domain.toLowerCase();
+  if(m.includes('tiktok'))return 'Recursos/uso de TikTok';
+  if(m.includes('google'))return 'Servicios de Google';
+  if(m.includes('apple'))return 'Servicios Apple';
+  if(m.includes('amazon'))return 'Amazon / AWS';
+  return 'Sitio web general';
+}
+// compute contextual description
+function contextDesc(idx){
+  const window=parseInt(document.getElementById('contextSize').value);
+  const prev= allRows[Math.max(0,idx-1)]?.d || '';
+  const next= allRows[Math.min(allRows.length-1,idx+1)]?.d || '';
+  const around=(prev+next).toLowerCase();
+  if(around.includes('tiktok'))return 'Accedido desde TikTok';
+  if(around.includes('google'))return 'Procedente de Google';
+  return basicDesc(allRows[idx].d);
+}
+
+function buildRows(){
+  const mode=document.getElementById('modeDesc').value;
+  const rows=[];
+  const tz=parseInt(document.getElementById('tzOff').value)||0;
+  allRows.forEach((r,i)=>{
+    const local=new Date(new Date(r.t).getTime()+tz*3600000).toLocaleString();
+    const desc= mode==='context'? contextDesc(i):basicDesc(r.d);
+    const html='<tr data-idx="'+i+'"><td class="details">+</td><td>'+local+'</td><td>'+favicon(r.d)+r.d+'</td><td>'+r.device+'</td></tr><tr class="accordion"><td colspan="4">'+desc+'</td></tr>';
+    rows.push(html);
+  });
+  if(cluster){cluster.update(rows);} else {
+    cluster=new Clusterize({rows:rows,scrollId:'scrollArea',contentId:'contentArea'});
+  }
+}
+
+function applyFilter(){
+  const f=document.getElementById('fromDate').value? new Date(document.getElementById('fromDate').value):null;
+  const t=document.getElementById('toDate').value? new Date(document.getElementById('toDate').value):null;
+  const dom=document.getElementById('domainFilter').value.toLowerCase();
+  allRows=allRows.filter(r=>{
+    const ts=new Date(r.t);
+    if(f && ts<f)return false;
+    if(t && ts>t)return false;
+    if(dom && !r.d.toLowerCase().includes(dom))return false;
+    return true;
+  });
+  buildRows();
+}
+
+document.getElementById('fileCsv').addEventListener('change',e=>{
+  const file=e.target.files[0];
+  if(!file)return;
+  allRows=[];
+  Papa.parse(file,{
+    header:true,
+    worker:true,
+    step:function(res){
+      const d=res.data;
+      allRows.push({t:d.timestamp||d.time||d.date,d:(d.root_domain||d.domain||'').trim(),device:(d.device_name||d.device_model||'').trim()});
+    },
+    complete:function(){
+      buildRows();
+    }
+  });
+});
+
+document.getElementById('btnFilter').addEventListener('click',applyFilter);
+document.getElementById('modeDesc').addEventListener('change',buildRows);
+</script>
+</body>
+</html>
